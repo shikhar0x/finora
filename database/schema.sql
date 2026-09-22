@@ -1,23 +1,37 @@
-CREATE DATABASE IF NOT EXISTS finora;
+-- ============================================================
+-- Finora Database Schema
+-- MySQL 8.4+
+-- Expense & Personal Finance Manager
+-- ============================================================
+
+CREATE DATABASE IF NOT EXISTS finora
+    CHARACTER SET utf8mb4
+    COLLATE utf8mb4_0900_ai_ci;
+
 USE finora;
 
--- ============================================
+-- ============================================================
 -- USERS
--- ============================================
+-- Supports account/profile information used by the application.
+-- ============================================================
 
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     user_id BIGINT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(100) NOT NULL,
-    email VARCHAR(150) NOT NULL UNIQUE,
+    email VARCHAR(255) NOT NULL UNIQUE,
     password VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP
 );
 
--- ============================================
+-- ============================================================
 -- CATEGORIES
--- ============================================
+-- Categories are separated by transaction type so that the same
+-- name can exist independently for income and expense.
+-- ============================================================
 
-CREATE TABLE categories (
+CREATE TABLE IF NOT EXISTS categories (
     category_id BIGINT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(100) NOT NULL,
     type ENUM('INCOME', 'EXPENSE') NOT NULL,
@@ -26,11 +40,13 @@ CREATE TABLE categories (
         UNIQUE (name, type)
 );
 
--- ============================================
+-- ============================================================
 -- TRANSACTIONS
--- ============================================
+-- Stores both income and expense transactions.
+-- Dashboard and report totals are derived from this table.
+-- ============================================================
 
-CREATE TABLE transactions (
+CREATE TABLE IF NOT EXISTS transactions (
     transaction_id BIGINT PRIMARY KEY AUTO_INCREMENT,
 
     user_id BIGINT NOT NULL,
@@ -43,26 +59,35 @@ CREATE TABLE transactions (
 
     description VARCHAR(255),
     payment_method VARCHAR(50),
+    notes TEXT,
 
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_transaction_user
         FOREIGN KEY (user_id)
-        REFERENCES users(user_id),
+        REFERENCES users(user_id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
 
     CONSTRAINT fk_transaction_category
         FOREIGN KEY (category_id)
-        REFERENCES categories(category_id),
+        REFERENCES categories(category_id)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
 
     CONSTRAINT chk_transaction_amount
         CHECK (amount > 0)
 );
 
--- ============================================
+-- ============================================================
 -- BUDGETS
--- ============================================
+-- One budget per user/category/month/year combination.
+-- Budget progress is calculated from transactions.
+-- ============================================================
 
-CREATE TABLE budgets (
+CREATE TABLE IF NOT EXISTS budgets (
     budget_id BIGINT PRIMARY KEY AUTO_INCREMENT,
 
     user_id BIGINT NOT NULL,
@@ -73,13 +98,21 @@ CREATE TABLE budgets (
     month TINYINT NOT NULL,
     year SMALLINT NOT NULL,
 
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP,
+
     CONSTRAINT fk_budget_user
         FOREIGN KEY (user_id)
-        REFERENCES users(user_id),
+        REFERENCES users(user_id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
 
     CONSTRAINT fk_budget_category
         FOREIGN KEY (category_id)
-        REFERENCES categories(category_id),
+        REFERENCES categories(category_id)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
 
     CONSTRAINT chk_budget_amount
         CHECK (amount > 0),
@@ -87,6 +120,51 @@ CREATE TABLE budgets (
     CONSTRAINT chk_budget_month
         CHECK (month BETWEEN 1 AND 12),
 
+    CONSTRAINT chk_budget_year
+        CHECK (year >= 2000),
+
     CONSTRAINT uq_budget_user_category_period
         UNIQUE (user_id, category_id, month, year)
 );
+
+-- ============================================================
+-- INDEXES
+-- Supports common application queries:
+-- transaction history, filtering, reports and budget lookups.
+-- ============================================================
+
+CREATE INDEX idx_transactions_user_date
+    ON transactions (user_id, transaction_date);
+
+CREATE INDEX idx_transactions_category
+    ON transactions (category_id);
+
+CREATE INDEX idx_transactions_type
+    ON transactions (type);
+
+CREATE INDEX idx_budgets_user_period
+    ON budgets (user_id, year, month);
+
+-- ============================================================
+-- DEFAULT CATEGORIES
+-- Safe to run repeatedly because of the unique constraint.
+-- ============================================================
+
+INSERT INTO categories (name, type) VALUES
+    ('Food', 'EXPENSE'),
+    ('Transport', 'EXPENSE'),
+    ('Shopping', 'EXPENSE'),
+    ('Bills', 'EXPENSE'),
+    ('Entertainment', 'EXPENSE'),
+    ('Other', 'EXPENSE'),
+    ('Salary', 'INCOME'),
+    ('Freelance', 'INCOME'),
+    ('Other', 'INCOME')
+ON DUPLICATE KEY UPDATE
+    name = VALUES(name);
+
+-- ============================================================
+-- VERIFICATION
+-- ============================================================
+
+SHOW TABLES;
