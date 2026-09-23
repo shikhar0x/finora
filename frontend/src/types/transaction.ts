@@ -1,17 +1,21 @@
 export type TransactionType = "INCOME" | "EXPENSE";
 
-export type PaymentMethod = "UPI" | "Cash" | "Card" | "Bank Transfer" | "Other";
-
 export interface Transaction {
   id: number;
-  date: string; // ISO format YYYY-MM-DD
-  description: string;
-  category: string;
+  userId: number;
+  accountId: number;
+  categoryId: number;
+  paymentMethodId?: number;
   type: TransactionType;
   amount: number;
-  paymentMethod: PaymentMethod | string;
+  date: string; // ISO format YYYY-MM-DD
+  description?: string;
   notes?: string;
   createdAt?: string;
+  updatedAt?: string;
 }
 
-export type NewTransactionInput = Omit<Transaction, "id" | "createdAt">;
+export type NewTransactionInput = Omit<
+  Transaction,
+  "id" | "createdAt" | "updatedAt"
+>;

@@ -34,11 +34,17 @@ export default function BudgetForm({ onClose, existingBudget }: BudgetFormProps)
   const { addBudget, updateBudget, categories, preferences } = useFinance();
 
   const expenseCategories: SelectOption[] = categories
-    .filter((c) => c.type === "EXPENSE" || c.type === "BOTH")
-    .map((c) => ({ value: c.name, label: c.name, icon: "category" }));
+    .filter((c) => c.type === "EXPENSE")
+    .map((c) => ({
+      value: String(c.id),
+      label: c.name,
+      icon: (c.icon as any) || "category",
+    }));
 
-  const [category, setCategory] = useState(
-    existingBudget?.category || expenseCategories[0]?.value || "Food"
+  const [categoryId, setCategoryId] = useState<string>(
+    existingBudget
+      ? String(existingBudget.categoryId)
+      : expenseCategories[0]?.value || "1"
   );
   const [limit, setLimit] = useState(
     existingBudget ? String(existingBudget.limit) : ""
@@ -63,14 +69,15 @@ export default function BudgetForm({ onClose, existingBudget }: BudgetFormProps)
 
     if (existingBudget) {
       updateBudget(existingBudget.id, {
-        category,
+        categoryId: Number(categoryId),
         limit: parsedLimit,
         month: parseInt(month, 10),
         year: parseInt(year, 10),
       });
     } else {
       addBudget({
-        category,
+        userId: 1,
+        categoryId: Number(categoryId),
         limit: parsedLimit,
         month: parseInt(month, 10),
         year: parseInt(year, 10),
@@ -95,8 +102,8 @@ export default function BudgetForm({ onClose, existingBudget }: BudgetFormProps)
 
         <SelectField
           label="Expense Category"
-          value={category}
-          onChange={setCategory}
+          value={categoryId}
+          onChange={setCategoryId}
           options={expenseCategories}
           required
         />
@@ -138,11 +145,7 @@ export default function BudgetForm({ onClose, existingBudget }: BudgetFormProps)
         </div>
 
         <div className="modal-actions">
-          <button
-            className="secondary-button"
-            type="button"
-            onClick={onClose}
-          >
+          <button className="secondary-button" type="button" onClick={onClose}>
             Cancel
           </button>
 

@@ -1,7 +1,11 @@
+export type CategoryType = "EXPENSE" | "INCOME";
+
 export interface Category {
   id: number;
   name: string;
-  type: "EXPENSE" | "INCOME" | "BOTH";
+  type: CategoryType;
   icon?: string;
   color?: string;
 }
+
+export type NewCategoryInput = Omit<Category, "id">;

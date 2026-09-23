@@ -1,7 +1,8 @@
 -- ============================================================
 -- Finora Database Schema
--- MySQL 8.4+
+-- MySQL 8.0+
 -- Expense & Personal Finance Manager
+-- Parity with Authoritative ER Diagram (8 Tables)
 -- ============================================================
 
 CREATE DATABASE IF NOT EXISTS finora
@@ -11,8 +12,7 @@ CREATE DATABASE IF NOT EXISTS finora
 USE finora;
 
 -- ============================================================
--- USERS
--- Supports account/profile information used by the application.
+-- 1. USERS
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS users (
@@ -26,9 +26,29 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- ============================================================
--- CATEGORIES
--- Categories are separated by transaction type so that the same
--- name can exist independently for income and expense.
+-- 2. ACCOUNTS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS accounts (
+    account_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    account_name VARCHAR(100) NOT NULL,
+    account_type ENUM('SAVINGS', 'CHECKING', 'CREDIT_CARD', 'CASH', 'INVESTMENT', 'WALLET', 'OTHER') NOT NULL DEFAULT 'SAVINGS',
+    current_balance DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    currency CHAR(3) NOT NULL DEFAULT 'INR',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_accounts_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(user_id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
+);
+
+-- ============================================================
+-- 3. CATEGORIES
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS categories (
@@ -41,63 +61,34 @@ CREATE TABLE IF NOT EXISTS categories (
 );
 
 -- ============================================================
--- TRANSACTIONS
--- Stores both income and expense transactions.
--- Dashboard and report totals are derived from this table.
+-- 4. PAYMENT METHODS
 -- ============================================================
 
-CREATE TABLE IF NOT EXISTS transactions (
-    transaction_id BIGINT PRIMARY KEY AUTO_INCREMENT,
-
+CREATE TABLE IF NOT EXISTS payment_methods (
+    payment_method_id BIGINT PRIMARY KEY AUTO_INCREMENT,
     user_id BIGINT NOT NULL,
-    category_id BIGINT NOT NULL,
-
-    type ENUM('INCOME', 'EXPENSE') NOT NULL,
-
-    amount DECIMAL(12,2) NOT NULL,
-    transaction_date DATE NOT NULL,
-
-    description VARCHAR(255),
-    payment_method VARCHAR(50),
-    notes TEXT,
-
+    method_name VARCHAR(100) NOT NULL,
+    details VARCHAR(255),
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-        ON UPDATE CURRENT_TIMESTAMP,
 
-    CONSTRAINT fk_transaction_user
+    CONSTRAINT fk_payment_methods_user
         FOREIGN KEY (user_id)
         REFERENCES users(user_id)
         ON DELETE CASCADE
-        ON UPDATE CASCADE,
-
-    CONSTRAINT fk_transaction_category
-        FOREIGN KEY (category_id)
-        REFERENCES categories(category_id)
-        ON DELETE RESTRICT
-        ON UPDATE CASCADE,
-
-    CONSTRAINT chk_transaction_amount
-        CHECK (amount > 0)
+        ON UPDATE CASCADE
 );
 
 -- ============================================================
--- BUDGETS
--- One budget per user/category/month/year combination.
--- Budget progress is calculated from transactions.
+-- 5. BUDGETS
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS budgets (
     budget_id BIGINT PRIMARY KEY AUTO_INCREMENT,
-
     user_id BIGINT NOT NULL,
     category_id BIGINT NOT NULL,
-
     amount DECIMAL(12,2) NOT NULL,
-
     month TINYINT NOT NULL,
     year SMALLINT NOT NULL,
-
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ON UPDATE CURRENT_TIMESTAMP,
@@ -128,13 +119,146 @@ CREATE TABLE IF NOT EXISTS budgets (
 );
 
 -- ============================================================
--- INDEXES
--- Supports common application queries:
--- transaction history, filtering, reports and budget lookups.
+-- 6. TRANSACTIONS
 -- ============================================================
+
+CREATE TABLE IF NOT EXISTS transactions (
+    transaction_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    account_id BIGINT NOT NULL,
+    category_id BIGINT NOT NULL,
+    payment_method_id BIGINT,
+    type ENUM('INCOME', 'EXPENSE') NOT NULL,
+    amount DECIMAL(12,2) NOT NULL,
+    transaction_date DATE NOT NULL,
+    description VARCHAR(255),
+    notes TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_transaction_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(user_id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+
+    CONSTRAINT fk_transaction_account
+        FOREIGN KEY (account_id)
+        REFERENCES accounts(account_id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+
+    CONSTRAINT fk_transaction_category
+        FOREIGN KEY (category_id)
+        REFERENCES categories(category_id)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
+
+    CONSTRAINT fk_transaction_payment_method
+        FOREIGN KEY (payment_method_id)
+        REFERENCES payment_methods(payment_method_id)
+        ON DELETE SET NULL
+        ON UPDATE CASCADE,
+
+    CONSTRAINT chk_transaction_amount
+        CHECK (amount > 0)
+);
+
+-- ============================================================
+-- 7. GOALS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS goals (
+    goal_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    goal_name VARCHAR(150) NOT NULL,
+    target_amount DECIMAL(12,2) NOT NULL,
+    current_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    target_date DATE,
+    status ENUM('IN_PROGRESS', 'ACHIEVED', 'CANCELLED') NOT NULL DEFAULT 'IN_PROGRESS',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_goal_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(user_id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+
+    CONSTRAINT chk_goal_target_amount
+        CHECK (target_amount > 0),
+
+    CONSTRAINT chk_goal_current_amount
+        CHECK (current_amount >= 0)
+);
+
+-- ============================================================
+-- 8. RECURRING TRANSACTIONS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS recurring_transactions (
+    recurring_transaction_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    account_id BIGINT NOT NULL,
+    category_id BIGINT NOT NULL,
+    payment_method_id BIGINT,
+    type ENUM('INCOME', 'EXPENSE') NOT NULL,
+    amount DECIMAL(12,2) NOT NULL,
+    frequency ENUM('DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY') NOT NULL,
+    start_date DATE NOT NULL,
+    end_date DATE,
+    description VARCHAR(255),
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_recurring_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(user_id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+
+    CONSTRAINT fk_recurring_account
+        FOREIGN KEY (account_id)
+        REFERENCES accounts(account_id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+
+    CONSTRAINT fk_recurring_category
+        FOREIGN KEY (category_id)
+        REFERENCES categories(category_id)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
+
+    CONSTRAINT fk_recurring_payment_method
+        FOREIGN KEY (payment_method_id)
+        REFERENCES payment_methods(payment_method_id)
+        ON DELETE SET NULL
+        ON UPDATE CASCADE,
+
+    CONSTRAINT chk_recurring_amount
+        CHECK (amount > 0)
+);
+
+-- ============================================================
+-- INDEXES
+-- Supports fast lookup and join operations across relational queries
+-- ============================================================
+
+CREATE INDEX idx_accounts_user
+    ON accounts (user_id);
+
+CREATE INDEX idx_payment_methods_user
+    ON payment_methods (user_id);
 
 CREATE INDEX idx_transactions_user_date
     ON transactions (user_id, transaction_date);
+
+CREATE INDEX idx_transactions_account
+    ON transactions (account_id);
 
 CREATE INDEX idx_transactions_category
     ON transactions (category_id);
@@ -145,9 +269,15 @@ CREATE INDEX idx_transactions_type
 CREATE INDEX idx_budgets_user_period
     ON budgets (user_id, year, month);
 
+CREATE INDEX idx_goals_user_status
+    ON goals (user_id, status);
+
+CREATE INDEX idx_recurring_user_active
+    ON recurring_transactions (user_id, is_active);
+
 -- ============================================================
--- DEFAULT CATEGORIES
--- Safe to run repeatedly because of the unique constraint.
+-- DEFAULT SEED DATA
+-- Default Categories, Demo Accounts, and Payment Methods
 -- ============================================================
 
 INSERT INTO categories (name, type) VALUES
@@ -156,9 +286,12 @@ INSERT INTO categories (name, type) VALUES
     ('Shopping', 'EXPENSE'),
     ('Bills', 'EXPENSE'),
     ('Entertainment', 'EXPENSE'),
+    ('Healthcare', 'EXPENSE'),
+    ('Education', 'EXPENSE'),
     ('Other', 'EXPENSE'),
     ('Salary', 'INCOME'),
     ('Freelance', 'INCOME'),
+    ('Investments', 'INCOME'),
     ('Other', 'INCOME')
 ON DUPLICATE KEY UPDATE
     name = VALUES(name);

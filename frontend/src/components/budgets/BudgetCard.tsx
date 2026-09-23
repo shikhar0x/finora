@@ -1,11 +1,12 @@
 import React, { useState } from "react";
-import Icon from "../ui/Icon";
+import Icon, { getCategoryIcon } from "../ui/Icon";
 import { formatCurrency } from "../../utils/formatters";
 import type { Budget } from "../../types/budget";
 
 interface BudgetCardProps {
   budget: {
     id: number;
+    categoryId: number;
     category: string;
     spent: number;
     limit: number;
@@ -39,13 +40,11 @@ export default function BudgetCard({
       <div className="budget-card-header">
         <div className="budget-card-title-group">
           <div className="budget-card-icon">
-            <Icon name="tag" size={16} strokeWidth={2} />
+            <Icon name={getCategoryIcon(budget.category)} size={16} strokeWidth={2} />
           </div>
           <div>
             <h4>{budget.category}</h4>
-            <span className="budget-month-label">
-              Monthly Limit
-            </span>
+            <span className="budget-month-label">Monthly Limit</span>
           </div>
         </div>
 
@@ -77,7 +76,8 @@ export default function BudgetCard({
                 onClick={() =>
                   onEdit({
                     id: budget.id,
-                    category: budget.category,
+                    userId: 1,
+                    categoryId: budget.categoryId,
                     limit: budget.limit,
                     month: budget.month,
                     year: budget.year,

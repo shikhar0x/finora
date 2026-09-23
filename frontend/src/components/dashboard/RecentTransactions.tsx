@@ -5,7 +5,7 @@ import { useFinance } from "../../context/FinanceContext";
 import { formatCurrency, formatDate } from "../../utils/formatters";
 
 export default function RecentTransactions() {
-  const { recentTransactions, preferences } = useFinance();
+  const { recentTransactions, getCategoryById, preferences } = useFinance();
 
   return (
     <section className="dashboard-card transactions-card">
@@ -28,6 +28,8 @@ export default function RecentTransactions() {
         <div className="transaction-list">
           {recentTransactions.map((transaction) => {
             const isIncome = transaction.type === "INCOME";
+            const cat = getCategoryById(transaction.categoryId);
+            const categoryName = cat ? cat.name : "Transaction";
             const formattedAmount = formatCurrency(
               transaction.amount,
               preferences.currencySymbol
@@ -48,9 +50,10 @@ export default function RecentTransactions() {
                 </div>
 
                 <div className="transaction-info">
-                  <strong>{transaction.description}</strong>
+                  <strong>{transaction.description || "Untitled Transaction"}</strong>
                   <span>
-                    {transaction.category} · {formatDate(transaction.date, preferences.dateFormat)}
+                    {categoryName} ·{" "}
+                    {formatDate(transaction.date, preferences.dateFormat)}
                   </span>
                 </div>
 

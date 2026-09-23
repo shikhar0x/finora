@@ -13,6 +13,9 @@ const navigation: NavigationItem[] = [
   { label: "Dashboard", path: "/", icon: "dashboard" },
   { label: "Transactions", path: "/transactions", icon: "transactions" },
   { label: "Budgets", path: "/budgets", icon: "budget" },
+  { label: "Goals", path: "/goals", icon: "goals" },
+  { label: "Recurring", path: "/recurring", icon: "recurring" },
+  { label: "Accounts", path: "/accounts", icon: "accounts" },
   { label: "Reports", path: "/reports", icon: "reports" },
 ];
 

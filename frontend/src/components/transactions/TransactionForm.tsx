@@ -9,46 +9,43 @@ interface TransactionFormProps {
   onClose: () => void;
 }
 
-const EXPENSE_CATEGORIES: SelectOption[] = [
-  { value: "Food", label: "Food & Dining", icon: "category" },
-  { value: "Transport", label: "Transport & Fuel", icon: "category" },
-  { value: "Shopping", label: "Shopping & Retail", icon: "category" },
-  { value: "Bills", label: "Bills & Utilities", icon: "category" },
-  { value: "Entertainment", label: "Entertainment", icon: "category" },
-  { value: "Healthcare", label: "Healthcare", icon: "category" },
-  { value: "Education", label: "Education", icon: "category" },
-  { value: "Other", label: "Other Expense", icon: "category" },
-];
-
-const INCOME_CATEGORIES: SelectOption[] = [
-  { value: "Salary", label: "Monthly Salary", icon: "income" },
-  { value: "Freelance", label: "Freelance / Consulting", icon: "income" },
-  { value: "Allowance", label: "Allowance / Grant", icon: "income" },
-  { value: "Other", label: "Other Income", icon: "income" },
-];
-
-const PAYMENT_METHODS: SelectOption[] = [
-  { value: "UPI", label: "UPI Payment", icon: "credit-card" },
-  { value: "Cash", label: "Cash", icon: "cash" },
-  { value: "Card", label: "Debit / Credit Card", icon: "credit-card" },
-  { value: "Bank Transfer", label: "Bank Transfer", icon: "bank" },
-];
-
 export default function TransactionForm({ onClose }: TransactionFormProps) {
-  const { addTransaction, preferences } = useFinance();
+  const {
+    addTransaction,
+    categories,
+    accounts,
+    paymentMethods,
+    preferences,
+    userProfile,
+  } = useFinance();
 
-  const [type, setType] = useState<TransactionType>(preferences.defaultTransactionType || "EXPENSE");
+  const [type, setType] = useState<TransactionType>(
+    preferences.defaultTransactionType || "EXPENSE"
+  );
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
-  const [date, setDate] = useState("2026-09-22");
-  const [category, setCategory] = useState(type === "EXPENSE" ? "Food" : "Salary");
-  const [paymentMethod, setPaymentMethod] = useState("UPI");
+  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+
+  // Default selections
+  const filteredCategories = categories.filter((c) => c.type === type);
+  const [categoryId, setCategoryId] = useState<string>(
+    filteredCategories[0] ? String(filteredCategories[0].id) : "1"
+  );
+  const [accountId, setAccountId] = useState<string>(
+    accounts[0] ? String(accounts[0].id) : "1"
+  );
+  const [paymentMethodId, setPaymentMethodId] = useState<string>(
+    paymentMethods[0] ? String(paymentMethods[0].id) : "1"
+  );
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
 
   const handleTypeChange = (newType: TransactionType) => {
     setType(newType);
-    setCategory(newType === "EXPENSE" ? "Food" : "Salary");
+    const newFiltered = categories.filter((c) => c.type === newType);
+    if (newFiltered.length > 0) {
+      setCategoryId(String(newFiltered[0].id));
+    }
   };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -67,26 +64,40 @@ export default function TransactionForm({ onClose }: TransactionFormProps) {
     }
 
     addTransaction({
-      description: description.trim(),
-      amount: parsedAmount,
+      userId: 1, // Default active user
+      accountId: Number(accountId),
+      categoryId: Number(categoryId),
+      paymentMethodId: paymentMethodId ? Number(paymentMethodId) : undefined,
       type,
-      category,
+      amount: parsedAmount,
       date,
-      paymentMethod,
+      description: description.trim(),
       notes: notes.trim() || undefined,
     });
 
     onClose();
   };
 
-  const categoryOptions = type === "EXPENSE" ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
+  const categoryOptions: SelectOption[] = filteredCategories.map((c) => ({
+    value: String(c.id),
+    label: c.name,
+    icon: (c.icon as any) || (type === "EXPENSE" ? "category" : "income"),
+  }));
+
+  const accountOptions: SelectOption[] = accounts.map((a) => ({
+    value: String(a.id),
+    label: `${a.accountName} (${preferences.currencySymbol}${a.currentBalance.toLocaleString()})`,
+    icon: "bank",
+  }));
+
+  const paymentMethodOptions: SelectOption[] = paymentMethods.map((p) => ({
+    value: String(p.id),
+    label: p.methodName,
+    icon: "credit-card",
+  }));
 
   return (
-    <Modal
-      title="Add Transaction"
-      kicker="MONEY FLOW"
-      onClose={onClose}
-    >
+    <Modal title="Add Transaction" kicker="MONEY FLOW" onClose={onClose}>
       <form className="transaction-form" onSubmit={handleSubmit}>
         {error && (
           <div className="form-error-alert" role="alert">
@@ -122,7 +133,9 @@ export default function TransactionForm({ onClose }: TransactionFormProps) {
             id="tx-description"
             type="text"
             className="themed-input"
-            placeholder={type === "EXPENSE" ? "e.g. Grocery Shopping" : "e.g. Monthly Salary"}
+            placeholder={
+              type === "EXPENSE" ? "e.g. Grocery Shopping" : "e.g. Monthly Salary"
+            }
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             required
@@ -130,7 +143,7 @@ export default function TransactionForm({ onClose }: TransactionFormProps) {
           />
         </div>
 
-        {/* Amount & Date in a responsive row */}
+        {/* Amount & Date */}
         <div className="form-row">
           <div className="form-field-group">
             <label htmlFor="tx-amount" className="input-label">
@@ -149,29 +162,35 @@ export default function TransactionForm({ onClose }: TransactionFormProps) {
             />
           </div>
 
-          <DateField
-            label="Date"
-            value={date}
-            onChange={setDate}
+          <DateField label="Date" value={date} onChange={setDate} required />
+        </div>
+
+        {/* Account & Category Selection */}
+        <div className="form-row">
+          <SelectField
+            label="Account"
+            value={accountId}
+            onChange={setAccountId}
+            options={accountOptions}
+            required
+          />
+
+          <SelectField
+            label="Category"
+            value={categoryId}
+            onChange={setCategoryId}
+            options={categoryOptions}
             required
           />
         </div>
 
-        {/* Category & Payment Method */}
-        <div className="form-row">
-          <SelectField
-            label="Category"
-            value={category}
-            onChange={setCategory}
-            options={categoryOptions}
-            required
-          />
-
+        {/* Payment Method */}
+        <div className="form-field-group">
           <SelectField
             label="Payment Method"
-            value={paymentMethod}
-            onChange={setPaymentMethod}
-            options={PAYMENT_METHODS}
+            value={paymentMethodId}
+            onChange={setPaymentMethodId}
+            options={paymentMethodOptions}
             required
           />
         </div>
@@ -193,11 +212,7 @@ export default function TransactionForm({ onClose }: TransactionFormProps) {
 
         {/* Actions */}
         <div className="modal-actions">
-          <button
-            className="secondary-button"
-            type="button"
-            onClick={onClose}
-          >
+          <button className="secondary-button" type="button" onClick={onClose}>
             Cancel
           </button>
 

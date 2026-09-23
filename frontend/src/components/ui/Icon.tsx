@@ -6,6 +6,9 @@ export type IconName =
   | "budget"
   | "reports"
   | "settings"
+  | "accounts"
+  | "goals"
+  | "recurring"
   | "logout"
   | "bell"
   | "wallet"
@@ -28,6 +31,7 @@ export type IconName =
   | "cash"
   | "bank"
   | "check"
+  | "check-circle"
   | "filter"
   | "trash"
   | "edit"
@@ -46,7 +50,35 @@ export type IconName =
   | "alert-triangle"
   | "rupee"
   | "dollar-sign"
-  | "tag";
+  | "play"
+  | "pause"
+  | "tag"
+  | "cat-food"
+  | "cat-transport"
+  | "cat-shopping"
+  | "cat-bills"
+  | "cat-entertainment"
+  | "cat-healthcare"
+  | "cat-education"
+  | "cat-salary"
+  | "cat-freelance"
+  | "cat-investments"
+  | "cat-other";
+
+export function getCategoryIcon(nameOrCategory: string): IconName {
+  const norm = nameOrCategory.toLowerCase();
+  if (norm.includes("food") || norm.includes("dining") || norm.includes("grocery")) return "cat-food";
+  if (norm.includes("transport") || norm.includes("fuel") || norm.includes("transit") || norm.includes("metro")) return "cat-transport";
+  if (norm.includes("shopping") || norm.includes("retail") || norm.includes("cloth")) return "cat-shopping";
+  if (norm.includes("bill") || norm.includes("utilit") || norm.includes("electric") || norm.includes("internet")) return "cat-bills";
+  if (norm.includes("entertain") || norm.includes("movie") || norm.includes("game") || norm.includes("netflix")) return "cat-entertainment";
+  if (norm.includes("health") || norm.includes("medic") || norm.includes("doctor") || norm.includes("pharmacy")) return "cat-healthcare";
+  if (norm.includes("educat") || norm.includes("course") || norm.includes("book") || norm.includes("tuition")) return "cat-education";
+  if (norm.includes("salary") || norm.includes("payroll")) return "cat-salary";
+  if (norm.includes("freelance") || norm.includes("consult")) return "cat-freelance";
+  if (norm.includes("invest") || norm.includes("stock") || norm.includes("dividend") || norm.includes("crypto")) return "cat-investments";
+  return "cat-other";
+}
 
 interface IconProps {
   name: IconName;
@@ -452,11 +484,175 @@ export default function Icon({
         </svg>
       );
 
+    case "accounts":
+      return (
+        <svg {...common}>
+          <path d="M3 21h18" />
+          <path d="M3 10h18" />
+          <path d="M5 6l7-3 7 3" />
+          <path d="M4 10v11" />
+          <path d="M20 10v11" />
+          <path d="M8 14v4" />
+          <path d="M12 14v4" />
+          <path d="M16 14v4" />
+        </svg>
+      );
+
+    case "goals":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="10" />
+          <circle cx="12" cy="12" r="6" />
+          <circle cx="12" cy="12" r="2" />
+        </svg>
+      );
+
+    case "recurring":
+      return (
+        <svg {...common}>
+          <polyline points="17 1 21 5 17 9" />
+          <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+          <polyline points="7 23 3 19 7 15" />
+          <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+        </svg>
+      );
+
+    case "check-circle":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="10" />
+          <polyline points="16 9 10 15 8 13" />
+        </svg>
+      );
+
+    case "play":
+      return (
+        <svg {...common}>
+          <polygon points="5 3 19 12 5 21 5 3" />
+        </svg>
+      );
+
+    case "pause":
+      return (
+        <svg {...common}>
+          <rect x="6" y="4" width="4" height="16" />
+          <rect x="14" y="4" width="4" height="16" />
+        </svg>
+      );
+
     case "tag":
       return (
         <svg {...common}>
           <path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z" />
           <path d="M7 7h.01" />
+        </svg>
+      );
+
+    case "cat-food":
+      return (
+        <svg {...common}>
+          <path d="M18 8h1a4 4 0 0 1 0 8h-1" />
+          <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z" />
+          <line x1="6" y1="1" x2="6" y2="4" />
+          <line x1="10" y1="1" x2="10" y2="4" />
+          <line x1="14" y1="1" x2="14" y2="4" />
+        </svg>
+      );
+
+    case "cat-transport":
+      return (
+        <svg {...common}>
+          <rect x="3" y="4" width="18" height="13" rx="2" />
+          <path d="M5 11h14" />
+          <circle cx="7.5" cy="14.5" r="1.5" />
+          <circle cx="16.5" cy="14.5" r="1.5" />
+          <line x1="6" y1="17" x2="4" y2="20" />
+          <line x1="18" y1="17" x2="20" y2="20" />
+        </svg>
+      );
+
+    case "cat-shopping":
+      return (
+        <svg {...common}>
+          <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
+          <line x1="3" y1="6" x2="21" y2="6" />
+          <path d="M16 10a4 4 0 0 1-8 0" />
+        </svg>
+      );
+
+    case "cat-bills":
+      return (
+        <svg {...common}>
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <polyline points="14 2 14 8 20 8" />
+          <line x1="16" y1="13" x2="8" y2="13" />
+          <line x1="16" y1="17" x2="8" y2="17" />
+          <line x1="10" y1="9" x2="8" y2="9" />
+        </svg>
+      );
+
+    case "cat-entertainment":
+      return (
+        <svg {...common}>
+          <rect x="2" y="6" width="20" height="12" rx="2" />
+          <line x1="6" y1="12" x2="10" y2="12" />
+          <line x1="8" y1="10" x2="8" y2="14" />
+          <circle cx="15" cy="13" r="1" />
+          <circle cx="17" cy="11" r="1" />
+        </svg>
+      );
+
+    case "cat-healthcare":
+      return (
+        <svg {...common}>
+          <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
+          <path d="M12 9v6" />
+          <path d="M9 12h6" />
+        </svg>
+      );
+
+    case "cat-education":
+      return (
+        <svg {...common}>
+          <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
+          <path d="M6 12v5c3 3 9 3 12 0v-5" />
+        </svg>
+      );
+
+    case "cat-salary":
+      return (
+        <svg {...common}>
+          <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
+          <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+        </svg>
+      );
+
+    case "cat-freelance":
+      return (
+        <svg {...common}>
+          <rect x="2" y="3" width="20" height="14" rx="2" />
+          <line x1="2" y1="17" x2="22" y2="17" />
+          <line x1="12" y1="17" x2="12" y2="21" />
+        </svg>
+      );
+
+    case "cat-investments":
+      return (
+        <svg {...common}>
+          <line x1="18" y1="20" x2="18" y2="10" />
+          <line x1="12" y1="20" x2="12" y2="4" />
+          <line x1="6" y1="20" x2="6" y2="14" />
+          <path d="m2 8 8-5 4 4 8-5" />
+        </svg>
+      );
+
+    case "cat-other":
+      return (
+        <svg {...common}>
+          <rect x="3" y="3" width="7" height="7" rx="1" />
+          <rect x="14" y="3" width="7" height="7" rx="1" />
+          <rect x="14" y="14" width="7" height="7" rx="1" />
+          <rect x="3" y="14" width="7" height="7" rx="1" />
         </svg>
       );
 

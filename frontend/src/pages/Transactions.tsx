@@ -1,63 +1,115 @@
 import React, { useMemo, useState } from "react";
 import TransactionForm from "../components/transactions/TransactionForm";
 import SelectField from "../components/ui/SelectField";
-import Icon from "../components/ui/Icon";
+import Icon, { getCategoryIcon } from "../components/ui/Icon";
 import { useFinance } from "../context/FinanceContext";
 import { formatCurrency, formatDate } from "../utils/formatters";
 
 const ITEMS_PER_PAGE = 6;
 
 export default function Transactions() {
-  const { transactions, deleteTransaction, categories, preferences } = useFinance();
+  const {
+    transactions,
+    deleteTransaction,
+    categories,
+    accounts,
+    paymentMethods,
+    getAccountById,
+    getCategoryById,
+    getPaymentMethodById,
+    preferences,
+  } = useFinance();
 
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("ALL");
+  const [accountFilter, setAccountFilter] = useState("ALL");
   const [categoryFilter, setCategoryFilter] = useState("ALL");
   const [paymentFilter, setPaymentFilter] = useState("ALL");
   const [currentPage, setCurrentPage] = useState(1);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
 
-  // Category options for filter
-  const categoryFilterOptions = useMemo(() => {
-    return [
-      { value: "ALL", label: "All Categories" },
-      ...categories.map((c) => ({ value: c.name, label: c.name })),
-    ];
-  }, [categories]);
-
+  // Filter dropdown options
   const typeFilterOptions = [
     { value: "ALL", label: "All Types" },
     { value: "INCOME", label: "Income Only" },
     { value: "EXPENSE", label: "Expense Only" },
   ];
 
-  const paymentFilterOptions = [
-    { value: "ALL", label: "All Methods" },
-    { value: "UPI", label: "UPI" },
-    { value: "Cash", label: "Cash" },
-    { value: "Card", label: "Card" },
-    { value: "Bank Transfer", label: "Bank Transfer" },
-  ];
+  const accountFilterOptions = useMemo(() => {
+    return [
+      { value: "ALL", label: "All Accounts" },
+      ...accounts.map((a) => ({ value: String(a.id), label: a.accountName })),
+    ];
+  }, [accounts]);
+
+  const categoryFilterOptions = useMemo(() => {
+    return [
+      { value: "ALL", label: "All Categories" },
+      ...categories.map((c) => ({ value: String(c.id), label: c.name })),
+    ];
+  }, [categories]);
+
+  const paymentFilterOptions = useMemo(() => {
+    return [
+      { value: "ALL", label: "All Payment Methods" },
+      ...paymentMethods.map((p) => ({
+        value: String(p.id),
+        label: p.methodName,
+      })),
+    ];
+  }, [paymentMethods]);
 
   // Filtering
   const filteredTransactions = useMemo(() => {
     const query = search.toLowerCase().trim();
 
     return transactions.filter((tx) => {
+      const cat = getCategoryById(tx.categoryId);
+      const acc = getAccountById(tx.accountId);
+      const pm = getPaymentMethodById(tx.paymentMethodId);
+
+      const categoryName = cat ? cat.name.toLowerCase() : "";
+      const accountName = acc ? acc.accountName.toLowerCase() : "";
+      const paymentName = pm ? pm.methodName.toLowerCase() : "";
+      const desc = (tx.description || "").toLowerCase();
+      const notes = (tx.notes || "").toLowerCase();
+
       const matchesSearch =
         !query ||
-        tx.description.toLowerCase().includes(query) ||
-        tx.category.toLowerCase().includes(query) ||
-        (tx.notes && tx.notes.toLowerCase().includes(query));
+        desc.includes(query) ||
+        categoryName.includes(query) ||
+        accountName.includes(query) ||
+        paymentName.includes(query) ||
+        notes.includes(query);
 
       const matchesType = typeFilter === "ALL" || tx.type === typeFilter;
-      const matchesCategory = categoryFilter === "ALL" || tx.category === categoryFilter;
-      const matchesPayment = paymentFilter === "ALL" || tx.paymentMethod === paymentFilter;
+      const matchesAccount =
+        accountFilter === "ALL" || String(tx.accountId) === accountFilter;
+      const matchesCategory =
+        categoryFilter === "ALL" || String(tx.categoryId) === categoryFilter;
+      const matchesPayment =
+        paymentFilter === "ALL" || String(tx.paymentMethodId) === paymentFilter;
 
-      return matchesSearch && matchesType && matchesCategory && matchesPayment;
+      return (
+        matchesSearch &&
+        matchesType &&
+        matchesAccount &&
+        matchesCategory &&
+        matchesPayment
+      );
     });
-  }, [transactions, search, typeFilter, categoryFilter, paymentFilter]);
+  }, [
+    transactions,
+    search,
+    typeFilter,
+    accountFilter,
+    categoryFilter,
+    paymentFilter,
+    getCategoryById,
+    getAccountById,
+    getPaymentMethodById,
+  ]);
 
   const totalPages = Math.max(1, Math.ceil(filteredTransactions.length / ITEMS_PER_PAGE));
   const safeCurrentPage = Math.min(currentPage, totalPages);
@@ -74,24 +126,10 @@ export default function Transactions() {
     setCurrentPage(1);
   };
 
-  const handleTypeChange = (val: string) => {
-    setTypeFilter(val);
-    setCurrentPage(1);
-  };
-
-  const handleCategoryChange = (val: string) => {
-    setCategoryFilter(val);
-    setCurrentPage(1);
-  };
-
-  const handlePaymentChange = (val: string) => {
-    setPaymentFilter(val);
-    setCurrentPage(1);
-  };
-
   const handleResetFilters = () => {
     setSearch("");
     setTypeFilter("ALL");
+    setAccountFilter("ALL");
     setCategoryFilter("ALL");
     setPaymentFilter("ALL");
     setCurrentPage(1);
@@ -128,7 +166,7 @@ export default function Transactions() {
             <Icon name="search" size={16} className="search-icon" />
             <input
               type="text"
-              placeholder="Search by description or category..."
+              placeholder="Search description, category, account..."
               value={search}
               onChange={(e) => handleSearchChange(e.target.value)}
               aria-label="Search transactions"
@@ -148,34 +186,54 @@ export default function Transactions() {
           <div className="toolbar-dropdowns">
             <SelectField
               value={typeFilter}
-              onChange={handleTypeChange}
+              onChange={(val) => {
+                setTypeFilter(val);
+                setCurrentPage(1);
+              }}
               options={typeFilterOptions}
               className="toolbar-select"
             />
 
             <SelectField
+              value={accountFilter}
+              onChange={(val) => {
+                setAccountFilter(val);
+                setCurrentPage(1);
+              }}
+              options={accountFilterOptions}
+              className="toolbar-select"
+            />
+
+            <SelectField
               value={categoryFilter}
-              onChange={handleCategoryChange}
+              onChange={(val) => {
+                setCategoryFilter(val);
+                setCurrentPage(1);
+              }}
               options={categoryFilterOptions}
               className="toolbar-select"
             />
 
             <SelectField
               value={paymentFilter}
-              onChange={handlePaymentChange}
+              onChange={(val) => {
+                setPaymentFilter(val);
+                setCurrentPage(1);
+              }}
               options={paymentFilterOptions}
               className="toolbar-select"
             />
           </div>
         </div>
 
-        {/* Table / List */}
+        {/* Table */}
         <div className="transaction-table-wrapper">
           <table className="transaction-table">
             <thead>
               <tr>
                 <th>Date</th>
                 <th>Description</th>
+                <th>Account</th>
                 <th>Category</th>
                 <th>Payment Method</th>
                 <th>Type</th>
@@ -187,6 +245,14 @@ export default function Transactions() {
             <tbody>
               {paginatedTransactions.map((tx) => {
                 const isIncome = tx.type === "INCOME";
+                const cat = getCategoryById(tx.categoryId);
+                const acc = getAccountById(tx.accountId);
+                const pm = getPaymentMethodById(tx.paymentMethodId);
+
+                const categoryName = cat ? cat.name : `Category ${tx.categoryId}`;
+                const accountName = acc ? acc.accountName : `Account ${tx.accountId}`;
+                const paymentName = pm ? pm.methodName : "—";
+
                 const formattedAmount = formatCurrency(
                   tx.amount,
                   preferences.currencySymbol
@@ -210,18 +276,28 @@ export default function Transactions() {
                           />
                         </span>
                         <div>
-                          <strong>{tx.description}</strong>
+                          <strong>{tx.description || "Untitled Transaction"}</strong>
                           {tx.notes && <span className="table-note">{tx.notes}</span>}
                         </div>
                       </div>
                     </td>
 
                     <td>
-                      <span className="category-badge">{tx.category}</span>
+                      <span className="account-tag">
+                        <Icon name="bank" size={13} />
+                        {accountName}
+                      </span>
                     </td>
 
                     <td>
-                      <span className="payment-method-tag">{tx.paymentMethod}</span>
+                      <span className="category-badge">
+                        <Icon name={getCategoryIcon(categoryName)} size={12} strokeWidth={2} />
+                        {categoryName}
+                      </span>
+                    </td>
+
+                    <td>
+                      <span className="payment-method-tag">{paymentName}</span>
                     </td>
 
                     <td>
@@ -342,9 +418,7 @@ export default function Transactions() {
         )}
       </section>
 
-      {showForm && (
-        <TransactionForm onClose={() => setShowForm(false)} />
-      )}
+      {showForm && <TransactionForm onClose={() => setShowForm(false)} />}
     </section>
   );
 }
