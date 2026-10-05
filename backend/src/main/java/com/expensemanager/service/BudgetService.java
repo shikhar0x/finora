@@ -9,6 +9,7 @@ import com.expensemanager.repository.CategoryRepository;
 import com.expensemanager.repository.UserRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
@@ -30,6 +31,7 @@ public class BudgetService {
         this.categoryRepository = categoryRepository;
     }
 
+    @Transactional(readOnly = true)
     public List<BudgetDtos.BudgetResponse> getAll(Long userId) {
         return budgetRepository
                 .findByUserIdOrderByYearDescMonthDesc(userId)

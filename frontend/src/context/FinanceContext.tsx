@@ -240,7 +240,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           api.categories(),
           api.accounts(userId),
           api.transactions(userId),
-          api.budgets(userId).catch(() => []),
+          api.budgets(userId),
           api.goals(userId),
           api.recurringTransactions(userId),
           api.paymentMethods(userId),
