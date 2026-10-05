@@ -35,3 +35,7 @@ lerna-debug.log*
 *.njsproj
 *.sln
 *.sw?
+
+# Java / Maven build outputs
+backend/target/
+*.class
