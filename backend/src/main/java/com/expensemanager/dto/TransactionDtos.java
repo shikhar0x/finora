@@ -23,6 +23,8 @@ public final class TransactionDtos {
             @NotNull
             Long categoryId,
 
+            Long paymentMethodId,
+
             @NotNull
             Transaction.Type type,
 
@@ -46,6 +48,7 @@ public final class TransactionDtos {
             Long accountId,
             Long categoryId,
             String categoryName,
+            Long paymentMethodId,
             String type,
             BigDecimal amount,
             LocalDate date,

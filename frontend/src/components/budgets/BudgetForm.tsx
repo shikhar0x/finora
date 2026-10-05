@@ -75,8 +75,15 @@ export default function BudgetForm({ onClose, existingBudget }: BudgetFormProps)
         year: parseInt(year, 10),
       });
     } else {
+      const storedUserId = localStorage.getItem("finora_user_id");
+
+      if (!storedUserId) {
+        setError("Unable to determine the current user. Please reload Finora.");
+        return;
+      }
+
       addBudget({
-        userId: 1,
+        userId: Number(storedUserId),
         categoryId: Number(categoryId),
         limit: parsedLimit,
         month: parseInt(month, 10),

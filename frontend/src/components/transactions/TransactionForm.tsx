@@ -28,6 +28,9 @@ export default function TransactionForm({ onClose }: TransactionFormProps) {
 
   // Default selections
   const filteredCategories = categories.filter((c) => c.type === type);
+
+  console.log("[Finora] TransactionForm categories:", categories);
+  console.log("[Finora] TransactionForm filtered categories:", filteredCategories);
   const [categoryId, setCategoryId] = useState<string>(
     filteredCategories[0] ? String(filteredCategories[0].id) : "1"
   );

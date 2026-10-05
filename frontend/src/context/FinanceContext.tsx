@@ -19,15 +19,13 @@ import type {
 import type { UserProfile, UserPreferences } from "../types/settings";
 import {
   initialCategories,
-  initialAccounts,
   initialPaymentMethods,
   initialGoals,
   initialRecurringTransactions,
-  initialTransactions,
-  initialBudgets,
   initialUserProfile,
   initialPreferences,
 } from "../data/mockData";
+import { api } from "../lib/api";
 
 export interface CategoryExpense {
   name: string;
@@ -69,48 +67,44 @@ interface FinanceContextType {
   userProfile: UserProfile;
   preferences: UserPreferences;
 
-  // Transaction CRUD
   addTransaction: (input: NewTransactionInput) => Transaction;
   updateTransaction: (id: number, input: Partial<NewTransactionInput>) => void;
   deleteTransaction: (id: number) => void;
 
-  // Budget CRUD
   addBudget: (input: NewBudgetInput) => Budget;
   updateBudget: (id: number, input: Partial<NewBudgetInput>) => void;
   deleteBudget: (id: number) => void;
 
-  // Account CRUD
   addAccount: (input: NewAccountInput) => Account;
   updateAccount: (id: number, input: Partial<NewAccountInput>) => void;
   deleteAccount: (id: number) => void;
 
-  // Payment Method CRUD
   addPaymentMethod: (input: NewPaymentMethodInput) => PaymentMethod;
   updatePaymentMethod: (id: number, input: Partial<NewPaymentMethodInput>) => void;
   deletePaymentMethod: (id: number) => void;
 
-  // Goal CRUD
   addGoal: (input: NewGoalInput) => Goal;
   updateGoal: (id: number, input: Partial<NewGoalInput>) => void;
   deleteGoal: (id: number) => void;
 
-  // Recurring Transaction CRUD
-  addRecurringTransaction: (input: NewRecurringTransactionInput) => RecurringTransaction;
-  updateRecurringTransaction: (id: number, input: Partial<NewRecurringTransactionInput>) => void;
+  addRecurringTransaction: (
+    input: NewRecurringTransactionInput
+  ) => RecurringTransaction;
+  updateRecurringTransaction: (
+    id: number,
+    input: Partial<NewRecurringTransactionInput>
+  ) => void;
   deleteRecurringTransaction: (id: number) => void;
   toggleRecurringTransaction: (id: number) => void;
 
-  // Profile & Settings
   updateUserProfile: (profile: Partial<UserProfile>) => void;
   updatePreferences: (prefs: Partial<UserPreferences>) => void;
   resetDataToDefault: () => void;
 
-  // Entity Resolvers
   getAccountById: (id?: number) => Account | undefined;
   getCategoryById: (id?: number) => Category | undefined;
   getPaymentMethodById: (id?: number) => PaymentMethod | undefined;
 
-  // Computed metrics
   totalIncome: number;
   totalExpenses: number;
   totalBalance: number;
@@ -124,20 +118,235 @@ interface FinanceContextType {
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
 
-export function FinanceProvider({ children }: { children: ReactNode }) {
-  const [categories] = useState<Category[]>(initialCategories);
-  const [accounts, setAccounts] = useState<Account[]>(initialAccounts);
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(initialPaymentMethods);
-  const [goals, setGoals] = useState<Goal[]>(initialGoals);
-  const [recurringTransactions, setRecurringTransactions] = useState<RecurringTransaction[]>(
-    initialRecurringTransactions
-  );
-  const [transactions, setTransactions] = useState<Transaction[]>(initialTransactions);
-  const [budgets, setBudgets] = useState<Budget[]>(initialBudgets);
-  const [userProfile, setUserProfile] = useState<UserProfile>(initialUserProfile);
-  const [preferences, setPreferences] = useState<UserPreferences>(initialPreferences);
+const USER_STORAGE_KEY = "finora_user_id";
 
-  // Apply theme to document element
+function categoryWithMetadata(
+  category: { id: number; name: string; type: "INCOME" | "EXPENSE" }
+): Category {
+  const existing = initialCategories.find(
+    (item) => item.id === category.id || item.name === category.name
+  );
+
+  return {
+    id: category.id,
+    name: category.name,
+    type: category.type,
+    color: existing?.color,
+    icon: existing?.icon,
+  };
+}
+
+export function FinanceProvider({ children }: { children: ReactNode }) {
+  const [userId, setUserId] = useState<number | null>(() => {
+    const stored = localStorage.getItem(USER_STORAGE_KEY);
+    return stored ? Number(stored) : null;
+  });
+
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [budgets, setBudgets] = useState<Budget[]>([]);
+
+  // These remain local until their FA2 backend endpoints are implemented.
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(
+    initialPaymentMethods
+  );
+  const [goals, setGoals] = useState<Goal[]>(initialGoals);
+  const [recurringTransactions, setRecurringTransactions] = useState<
+    RecurringTransaction[]
+  >(initialRecurringTransactions);
+
+  const [userProfile, setUserProfile] =
+    useState<UserProfile>(initialUserProfile);
+  const [preferences, setPreferences] =
+    useState<UserPreferences>(initialPreferences);
+
+  const [loading, setLoading] = useState(true);
+
+  /*
+   * Bootstrap a single FA2 demo user.
+   *
+   * The backend already supports register/login but the existing FA1 UI
+   * does not have a login page. We therefore create/login one technical
+   * demo account and persist only its user ID in localStorage.
+   */
+  useEffect(() => {
+    let cancelled = false;
+
+    async function bootstrapUser() {
+      try {
+        if (userId) {
+          return;
+        }
+
+        const email = "fa2demo@finora.local";
+        const password = "FinoraFA2@2026";
+
+        let auth;
+
+        try {
+          auth = await api.login(email, password);
+        } catch {
+          auth = await api.register("Finora Demo User", email, password);
+        }
+
+        if (cancelled) return;
+
+        localStorage.setItem(USER_STORAGE_KEY, String(auth.userId));
+        setUserId(auth.userId);
+        setUserProfile((prev) => ({
+          ...prev,
+          name: auth.name,
+          email: auth.email,
+          avatarText: auth.name.charAt(0).toUpperCase(),
+        }));
+      } catch (error) {
+        console.error("Finora authentication bootstrap failed:", error);
+      }
+    }
+
+    bootstrapUser();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  /*
+   * Load the database-backed FA2 data once a user exists.
+   */
+  useEffect(() => {
+    if (!userId) return;
+
+    let cancelled = false;
+
+    async function loadData() {
+      setLoading(true);
+
+      try {
+        if (userId === null) {
+          throw new Error("Unable to determine Finora user ID.");
+        }
+        
+        const [
+          categoryData,
+          accountData,
+          transactionData,
+          budgetData,
+          goalData,
+          recurringData,
+          paymentMethodData,
+        ] = await Promise.all([
+          api.categories(),
+          api.accounts(userId),
+          api.transactions(userId),
+          api.budgets(userId).catch(() => []),
+          api.goals(userId),
+          api.recurringTransactions(userId),
+          api.paymentMethods(userId),
+        ]);
+
+        if (cancelled) return;
+
+        setCategories(categoryData.map(categoryWithMetadata));
+
+        setAccounts(
+          accountData.map((account) => ({
+            id: account.id,
+            userId: account.userId,
+            accountName: account.accountName,
+            accountType: account.accountType,
+            currentBalance: Number(account.currentBalance),
+            currency: account.currency,
+          }))
+        );
+
+        setTransactions(
+          transactionData.map((transaction) => ({
+            id: transaction.id,
+            userId: transaction.userId,
+            accountId: transaction.accountId,
+            categoryId: transaction.categoryId,
+            paymentMethodId: transaction.paymentMethodId,
+            type: transaction.type,
+            amount: Number(transaction.amount),
+            date: transaction.date,
+            description: transaction.description,
+            notes: transaction.notes,
+          }))
+        );
+
+        setBudgets(
+          budgetData.map((budget) => ({
+            id: budget.id,
+            userId: budget.userId,
+            categoryId: budget.categoryId,
+            limit: Number(budget.amount),
+            month: budget.month,
+            year: budget.year,
+          }))
+        );
+
+        setGoals(
+          goalData.map((goal) => ({
+            id: goal.id,
+            userId: goal.userId,
+            goalName: goal.goalName,
+            targetAmount: Number(goal.targetAmount),
+            currentAmount: Number(goal.currentAmount),
+            targetDate: goal.targetDate,
+            status: goal.status,
+            createdAt: goal.createdAt,
+            updatedAt: goal.updatedAt,
+          }))
+        );
+
+        setRecurringTransactions(
+          recurringData.map((item) => ({
+            id: item.id,
+            userId: item.userId,
+            accountId: item.accountId,
+            categoryId: item.categoryId,
+            paymentMethodId: item.paymentMethodId,
+            type: item.type,
+            amount: Number(item.amount),
+            frequency: item.frequency,
+            startDate: item.startDate,
+            endDate: item.endDate,
+            description: item.description,
+            isActive: item.isActive,
+            createdAt: item.createdAt,
+            updatedAt: item.updatedAt,
+          }))
+        );
+
+        setPaymentMethods(
+          paymentMethodData.map((method) => ({
+            id: method.id,
+            userId: method.userId,
+            methodName: method.methodName,
+            details: method.details,
+            createdAt: method.createdAt,
+          }))
+        );
+
+      } catch (error) {
+        console.error("Failed to load Finora database data:", error);
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  // Theme
   useEffect(() => {
     const applyTheme = (theme: "light" | "dark" | "system") => {
       if (theme === "dark") {
@@ -146,8 +355,13 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         document.documentElement.setAttribute("data-theme", "light");
       } else {
         const isSystemDark =
-          window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-        document.documentElement.setAttribute("data-theme", isSystemDark ? "dark" : "light");
+          window.matchMedia &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches;
+
+        document.documentElement.setAttribute(
+          "data-theme",
+          isSystemDark ? "dark" : "light"
+        );
       }
     };
 
@@ -155,374 +369,986 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
     if (preferences.theme === "system") {
       const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-      const handler = (e: MediaQueryListEvent) => {
-        document.documentElement.setAttribute("data-theme", e.matches ? "dark" : "light");
+
+      const handler = (event: MediaQueryListEvent) => {
+        document.documentElement.setAttribute(
+          "data-theme",
+          event.matches ? "dark" : "light"
+        );
       };
+
       mediaQuery.addEventListener("change", handler);
+
       return () => mediaQuery.removeEventListener("change", handler);
     }
   }, [preferences.theme]);
 
-  // Entity Resolvers
-  const getAccountById = (id?: number): Account | undefined => {
+  const getAccountById = (id?: number) => {
     if (!id) return undefined;
-    return accounts.find((a) => a.id === id);
+    return accounts.find((account) => account.id === id);
   };
 
-  const getCategoryById = (id?: number): Category | undefined => {
+  const getCategoryById = (id?: number) => {
     if (!id) return undefined;
-    return categories.find((c) => c.id === id);
+    return categories.find((category) => category.id === id);
   };
 
-  const getPaymentMethodById = (id?: number): PaymentMethod | undefined => {
+  const getPaymentMethodById = (id?: number) => {
     if (!id) return undefined;
-    return paymentMethods.find((p) => p.id === id);
+    return paymentMethods.find((method) => method.id === id);
   };
 
-  // Transaction CRUD
+  // -------------------------------------------------------------------------
+  // Transactions — DATABASE BACKED
+  // -------------------------------------------------------------------------
+
   const addTransaction = (input: NewTransactionInput): Transaction => {
-    const newTransaction: Transaction = {
+    const effectiveUserId = userId ?? input.userId;
+
+    const optimistic: Transaction = {
       ...input,
-      id: Date.now() + Math.floor(Math.random() * 1000),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      userId: effectiveUserId,
+      id: Date.now(),
     };
-    setTransactions((prev) => [newTransaction, ...prev]);
 
-    // Update account balance
-    setAccounts((prev) =>
-      prev.map((acc) => {
-        if (acc.id === input.accountId) {
-          const delta = input.type === "INCOME" ? input.amount : -input.amount;
-          return { ...acc, currentBalance: acc.currentBalance + delta };
-        }
-        return acc;
+    setTransactions((previous) => [optimistic, ...previous]);
+
+    api
+      .createTransaction({
+        userId: effectiveUserId,
+        accountId: input.accountId,
+        categoryId: input.categoryId,
+        paymentMethodId: input.paymentMethodId,
+        type: input.type,
+        amount: input.amount,
+        transactionDate: input.date,
+        description: input.description,
+        notes: input.notes,
       })
-    );
+      .then((saved) => {
+        setTransactions((previous) =>
+          previous.map((transaction) =>
+            transaction.id === optimistic.id
+              ? {
+                  id: saved.id,
+                  userId: saved.userId,
+                  accountId: saved.accountId,
+                  categoryId: saved.categoryId,
+                  paymentMethodId: saved.paymentMethodId,
+                  type: saved.type,
+                  amount: Number(saved.amount),
+                  date: saved.date,
+                  description: saved.description,
+                  notes: saved.notes,
+                }
+              : transaction
+          )
+        );
 
-    return newTransaction;
+        return api.accounts(effectiveUserId);
+      })
+      .then((accountData) => {
+        setAccounts(
+          accountData.map((account) => ({
+            id: account.id,
+            userId: account.userId,
+            accountName: account.accountName,
+            accountType: account.accountType,
+            currentBalance: Number(account.currentBalance),
+            currency: account.currency,
+          }))
+        );
+      })
+      .catch((error) => {
+        console.error("Failed to create transaction:", error);
+
+        setTransactions((previous) =>
+          previous.filter((transaction) => transaction.id !== optimistic.id)
+        );
+      });
+
+    return optimistic;
   };
 
-  const updateTransaction = (id: number, input: Partial<NewTransactionInput>) => {
-    setTransactions((prev) =>
-      prev.map((item) =>
-        item.id === id
-          ? { ...item, ...input, updatedAt: new Date().toISOString() }
-          : item
-      )
-    );
+  const updateTransaction = (
+    id: number,
+    input: Partial<NewTransactionInput>
+  ) => {
+    const existing = transactions.find((transaction) => transaction.id === id);
+
+    if (!existing || !userId) return;
+
+    const merged = {
+      userId,
+      accountId: input.accountId ?? existing.accountId,
+      categoryId: input.categoryId ?? existing.categoryId,
+      paymentMethodId:
+        input.paymentMethodId ?? existing.paymentMethodId,
+      type: input.type ?? existing.type,
+      amount: input.amount ?? existing.amount,
+      transactionDate: input.date ?? existing.date,
+      description: input.description ?? existing.description,
+      notes: input.notes ?? existing.notes,
+    };
+
+    api
+      .updateTransaction(id, merged)
+      .then((saved) => {
+        setTransactions((previous) =>
+          previous.map((transaction) =>
+            transaction.id === id
+              ? {
+                  ...transaction,
+                  id: saved.id,
+                  userId: saved.userId,
+                  accountId: saved.accountId,
+                  categoryId: saved.categoryId,
+                  paymentMethodId: saved.paymentMethodId,
+                  type: saved.type,
+                  amount: Number(saved.amount),
+                  date: saved.date,
+                  description: saved.description,
+                  notes: saved.notes,
+                }
+              : transaction
+          )
+        );
+
+        return api.accounts(userId);
+      })
+      .then((accountData) => {
+        setAccounts(
+          accountData.map((account) => ({
+            id: account.id,
+            userId: account.userId,
+            accountName: account.accountName,
+            accountType: account.accountType,
+            currentBalance: Number(account.currentBalance),
+            currency: account.currency,
+          }))
+        );
+      })
+      .catch((error) => {
+        console.error("Failed to update transaction:", error);
+      });
   };
 
   const deleteTransaction = (id: number) => {
-    const target = transactions.find((t) => t.id === id);
-    if (target) {
-      // Revert balance on account
-      setAccounts((prev) =>
-        prev.map((acc) => {
-          if (acc.id === target.accountId) {
-            const revertDelta = target.type === "INCOME" ? -target.amount : target.amount;
-            return { ...acc, currentBalance: acc.currentBalance + revertDelta };
-          }
-          return acc;
-        })
-      );
-    }
-    setTransactions((prev) => prev.filter((item) => item.id !== id));
+    if (!userId) return;
+
+    api
+      .deleteTransaction(userId, id)
+      .then(() => {
+        setTransactions((previous) =>
+          previous.filter((transaction) => transaction.id !== id)
+        );
+
+        return api.accounts(userId);
+      })
+      .then((accountData) => {
+        setAccounts(
+          accountData.map((account) => ({
+            id: account.id,
+            userId: account.userId,
+            accountName: account.accountName,
+            accountType: account.accountType,
+            currentBalance: Number(account.currentBalance),
+            currency: account.currency,
+          }))
+        );
+      })
+      .catch((error) => {
+        console.error("Failed to delete transaction:", error);
+      });
   };
 
-  // Budget CRUD
+  // -------------------------------------------------------------------------
+  // Budgets — DATABASE BACKED
+  // -------------------------------------------------------------------------
+
   const addBudget = (input: NewBudgetInput): Budget => {
-    const newBudget: Budget = {
+    const effectiveUserId = userId ?? input.userId;
+
+    const optimistic: Budget = {
       ...input,
-      id: Date.now() + Math.floor(Math.random() * 1000),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      userId: effectiveUserId,
+      id: Date.now(),
     };
-    setBudgets((prev) => [...prev, newBudget]);
-    return newBudget;
+
+    setBudgets((previous) => [...previous, optimistic]);
+
+    api
+      .createBudget({
+        userId: effectiveUserId,
+        categoryId: input.categoryId,
+        amount: input.limit,
+        month: input.month,
+        year: input.year,
+      })
+      .then((saved) => {
+        setBudgets((previous) =>
+          previous.map((budget) =>
+            budget.id === optimistic.id
+              ? {
+                  id: saved.id,
+                  userId: saved.userId,
+                  categoryId: saved.categoryId,
+                  limit: Number(saved.amount),
+                  month: saved.month,
+                  year: saved.year,
+                }
+              : budget
+          )
+        );
+      })
+      .catch((error) => {
+        console.error("Failed to create budget:", error);
+
+        setBudgets((previous) =>
+          previous.filter((budget) => budget.id !== optimistic.id)
+        );
+      });
+
+    return optimistic;
   };
 
-  const updateBudget = (id: number, input: Partial<NewBudgetInput>) => {
-    setBudgets((prev) =>
-      prev.map((item) =>
-        item.id === id
-          ? { ...item, ...input, updatedAt: new Date().toISOString() }
-          : item
-      )
-    );
+  const updateBudget = (
+    id: number,
+    input: Partial<NewBudgetInput>
+  ) => {
+    const existing = budgets.find((budget) => budget.id === id);
+
+    if (!existing || !userId) return;
+
+    const merged = {
+      userId,
+      categoryId: input.categoryId ?? existing.categoryId,
+      amount: input.limit ?? existing.limit,
+      month: input.month ?? existing.month,
+      year: input.year ?? existing.year,
+    };
+
+    api
+      .updateBudget(id, merged)
+      .then((saved) => {
+        setBudgets((previous) =>
+          previous.map((budget) =>
+            budget.id === id
+              ? {
+                  id: saved.id,
+                  userId: saved.userId,
+                  categoryId: saved.categoryId,
+                  limit: Number(saved.amount),
+                  month: saved.month,
+                  year: saved.year,
+                }
+              : budget
+          )
+        );
+      })
+      .catch((error) => {
+        console.error("Failed to update budget:", error);
+      });
   };
 
   const deleteBudget = (id: number) => {
-    setBudgets((prev) => prev.filter((item) => item.id !== id));
+    if (!userId) return;
+
+    api
+      .deleteBudget(userId, id)
+      .then(() => {
+        setBudgets((previous) =>
+          previous.filter((budget) => budget.id !== id)
+        );
+      })
+      .catch((error) => {
+        console.error("Failed to delete budget:", error);
+      });
   };
 
-  // Account CRUD
+  // -------------------------------------------------------------------------
+  // Accounts — DATABASE BACKED FOR CREATE/READ
+  // -------------------------------------------------------------------------
+
   const addAccount = (input: NewAccountInput): Account => {
-    const newAccount: Account = {
+    const effectiveUserId = userId ?? input.userId;
+
+    const optimistic: Account = {
       ...input,
-      id: Date.now() + Math.floor(Math.random() * 1000),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      userId: effectiveUserId,
+      id: Date.now(),
     };
-    setAccounts((prev) => [...prev, newAccount]);
-    return newAccount;
+
+    setAccounts((previous) => [...previous, optimistic]);
+
+    api
+      .createAccount({
+        userId: effectiveUserId,
+        accountName: input.accountName,
+        accountType: input.accountType,
+        currentBalance: input.currentBalance,
+        currency: input.currency,
+      })
+      .then((saved) => {
+        setAccounts((previous) =>
+          previous.map((account) =>
+            account.id === optimistic.id
+              ? {
+                  id: saved.id,
+                  userId: saved.userId,
+                  accountName: saved.accountName,
+                  accountType: saved.accountType,
+                  currentBalance: Number(saved.currentBalance),
+                  currency: saved.currency,
+                }
+              : account
+          )
+        );
+      })
+      .catch((error) => {
+        console.error("Failed to create account:", error);
+
+        setAccounts((previous) =>
+          previous.filter((account) => account.id !== optimistic.id)
+        );
+      });
+
+    return optimistic;
   };
 
-  const updateAccount = (id: number, input: Partial<NewAccountInput>) => {
-    setAccounts((prev) =>
-      prev.map((item) =>
-        item.id === id
-          ? { ...item, ...input, updatedAt: new Date().toISOString() }
-          : item
-      )
+  const updateAccount = (
+    id: number,
+    input: Partial<NewAccountInput>
+  ) => {
+    console.warn(
+      "Account update is not persisted yet because the FA2 backend does not expose an account PUT endpoint.",
+      id,
+      input
     );
   };
 
   const deleteAccount = (id: number) => {
-    setAccounts((prev) => prev.filter((item) => item.id !== id));
-  };
-
-  // Payment Method CRUD
-  const addPaymentMethod = (input: NewPaymentMethodInput): PaymentMethod => {
-    const newMethod: PaymentMethod = {
-      ...input,
-      id: Date.now() + Math.floor(Math.random() * 1000),
-      createdAt: new Date().toISOString(),
-    };
-    setPaymentMethods((prev) => [...prev, newMethod]);
-    return newMethod;
-  };
-
-  const updatePaymentMethod = (id: number, input: Partial<NewPaymentMethodInput>) => {
-    setPaymentMethods((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, ...input } : item))
+    console.warn(
+      "Account deletion is not persisted yet because the FA2 backend does not expose an account DELETE endpoint.",
+      id
     );
   };
 
-  const deletePaymentMethod = (id: number) => {
-    setPaymentMethods((prev) => prev.filter((item) => item.id !== id));
-  };
+  // -------------------------------------------------------------------------
+  // Payment methods — intentionally local for current FA2 scope
+  // -------------------------------------------------------------------------
 
-  // Goal CRUD
-  const addGoal = (input: NewGoalInput): Goal => {
-    const newGoal: Goal = {
+  const addPaymentMethod = (input: NewPaymentMethodInput): PaymentMethod => {
+    const newMethod: PaymentMethod = {
       ...input,
-      id: Date.now() + Math.floor(Math.random() * 1000),
+      id: Date.now(),
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
     };
-    setGoals((prev) => [...prev, newGoal]);
-    return newGoal;
+
+    setPaymentMethods((previous) => [newMethod, ...previous]);
+
+    return newMethod;
   };
 
-  const updateGoal = (id: number, input: Partial<NewGoalInput>) => {
-    setGoals((prev) =>
-      prev.map((item) =>
-        item.id === id
-          ? { ...item, ...input, updatedAt: new Date().toISOString() }
-          : item
+  const updatePaymentMethod = (
+    id: number,
+    input: Partial<NewPaymentMethodInput>
+  ) => {
+    setPaymentMethods((previous) =>
+      previous.map((item) =>
+        item.id === id ? { ...item, ...input } : item
       )
     );
   };
 
-  const deleteGoal = (id: number) => {
-    setGoals((prev) => prev.filter((item) => item.id !== id));
+  const deletePaymentMethod = (id: number) => {
+    setPaymentMethods((previous) =>
+      previous.filter((item) => item.id !== id)
+    );
   };
 
-  // Recurring Transaction CRUD
+  // -------------------------------------------------------------------------
+  // Goals — DATABASE BACKED
+  // -------------------------------------------------------------------------
+
+  const addGoal = (input: NewGoalInput): Goal => {
+    const effectiveUserId = userId ?? input.userId;
+
+    const optimistic: Goal = {
+      ...input,
+      userId: effectiveUserId,
+      id: Date.now(),
+    };
+
+    setGoals((previous) => [optimistic, ...previous]);
+
+    api
+      .createGoal({
+        userId: effectiveUserId,
+        goalName: input.goalName,
+        targetAmount: input.targetAmount,
+        currentAmount: input.currentAmount,
+        targetDate: input.targetDate,
+        status: input.status,
+      })
+      .then((saved) => {
+        setGoals((previous) =>
+          previous.map((goal) =>
+            goal.id === optimistic.id
+              ? {
+                  id: saved.id,
+                  userId: saved.userId,
+                  goalName: saved.goalName,
+                  targetAmount: Number(saved.targetAmount),
+                  currentAmount: Number(saved.currentAmount),
+                  targetDate: saved.targetDate,
+                  status: saved.status,
+                  createdAt: saved.createdAt,
+                  updatedAt: saved.updatedAt,
+                }
+              : goal
+          )
+        );
+      })
+      .catch((error) => {
+        console.error("Failed to create goal:", error);
+        setGoals((previous) =>
+          previous.filter((goal) => goal.id !== optimistic.id)
+        );
+      });
+
+    return optimistic;
+  };
+
+  const updateGoal = (
+    id: number,
+    input: Partial<NewGoalInput>
+  ) => {
+    const existing = goals.find((goal) => goal.id === id);
+
+    if (!existing || !userId) return;
+
+    const merged = {
+      userId,
+      goalName: input.goalName ?? existing.goalName,
+      targetAmount: input.targetAmount ?? existing.targetAmount,
+      currentAmount: input.currentAmount ?? existing.currentAmount,
+      targetDate: input.targetDate ?? existing.targetDate,
+      status: input.status ?? existing.status,
+    };
+
+    api
+      .updateGoal(id, merged)
+      .then((saved) => {
+        setGoals((previous) =>
+          previous.map((goal) =>
+            goal.id === id
+              ? {
+                  id: saved.id,
+                  userId: saved.userId,
+                  goalName: saved.goalName,
+                  targetAmount: Number(saved.targetAmount),
+                  currentAmount: Number(saved.currentAmount),
+                  targetDate: saved.targetDate,
+                  status: saved.status,
+                  createdAt: saved.createdAt,
+                  updatedAt: saved.updatedAt,
+                }
+              : goal
+          )
+        );
+      })
+      .catch((error) => {
+        console.error("Failed to update goal:", error);
+      });
+  };
+
+  const deleteGoal = (id: number) => {
+    if (!userId) return;
+
+    api
+      .deleteGoal(userId, id)
+      .then(() => {
+        setGoals((previous) =>
+          previous.filter((goal) => goal.id !== id)
+        );
+      })
+      .catch((error) => {
+        console.error("Failed to delete goal:", error);
+      });
+  };
+
+  // -------------------------------------------------------------------------
+  // Recurring transactions — DATABASE BACKED
+  // -------------------------------------------------------------------------
+
   const addRecurringTransaction = (
     input: NewRecurringTransactionInput
   ): RecurringTransaction => {
-    const newRecurring: RecurringTransaction = {
+    const effectiveUserId = userId ?? input.userId;
+
+    const optimistic: RecurringTransaction = {
       ...input,
-      id: Date.now() + Math.floor(Math.random() * 1000),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      userId: effectiveUserId,
+      id: Date.now(),
     };
-    setRecurringTransactions((prev) => [...prev, newRecurring]);
-    return newRecurring;
+
+    setRecurringTransactions((previous) => [
+      optimistic,
+      ...previous,
+    ]);
+
+    api
+      .createRecurringTransaction({
+        userId: effectiveUserId,
+        accountId: input.accountId,
+        categoryId: input.categoryId,
+        paymentMethodId: input.paymentMethodId,
+        type: input.type,
+        amount: input.amount,
+        frequency: input.frequency,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        description: input.description,
+        isActive: input.isActive,
+      })
+      .then((saved) => {
+        setRecurringTransactions((previous) =>
+          previous.map((item) =>
+            item.id === optimistic.id
+              ? {
+                  id: saved.id,
+                  userId: saved.userId,
+                  accountId: saved.accountId,
+                  categoryId: saved.categoryId,
+                  paymentMethodId: saved.paymentMethodId,
+                  type: saved.type,
+                  amount: Number(saved.amount),
+                  frequency: saved.frequency,
+                  startDate: saved.startDate,
+                  endDate: saved.endDate,
+                  description: saved.description,
+                  isActive: saved.isActive,
+                  createdAt: saved.createdAt,
+                  updatedAt: saved.updatedAt,
+                }
+              : item
+          )
+        );
+      })
+      .catch((error) => {
+        console.error("Failed to create recurring transaction:", error);
+        setRecurringTransactions((previous) =>
+          previous.filter((item) => item.id !== optimistic.id)
+        );
+      });
+
+    return optimistic;
   };
 
   const updateRecurringTransaction = (
     id: number,
     input: Partial<NewRecurringTransactionInput>
   ) => {
-    setRecurringTransactions((prev) =>
-      prev.map((item) =>
-        item.id === id
-          ? { ...item, ...input, updatedAt: new Date().toISOString() }
-          : item
-      )
-    );
+    const existing = recurringTransactions.find((item) => item.id === id);
+
+    if (!existing || !userId) return;
+
+    const merged = {
+      userId,
+      accountId: input.accountId ?? existing.accountId,
+      categoryId: input.categoryId ?? existing.categoryId,
+      paymentMethodId:
+        input.paymentMethodId ?? existing.paymentMethodId,
+      type: input.type ?? existing.type,
+      amount: input.amount ?? existing.amount,
+      frequency: input.frequency ?? existing.frequency,
+      startDate: input.startDate ?? existing.startDate,
+      endDate: input.endDate ?? existing.endDate,
+      description: input.description ?? existing.description,
+      isActive: input.isActive ?? existing.isActive,
+    };
+
+    api
+      .updateRecurringTransaction(id, merged)
+      .then((saved) => {
+        setRecurringTransactions((previous) =>
+          previous.map((item) =>
+            item.id === id
+              ? {
+                  id: saved.id,
+                  userId: saved.userId,
+                  accountId: saved.accountId,
+                  categoryId: saved.categoryId,
+                  paymentMethodId: saved.paymentMethodId,
+                  type: saved.type,
+                  amount: Number(saved.amount),
+                  frequency: saved.frequency,
+                  startDate: saved.startDate,
+                  endDate: saved.endDate,
+                  description: saved.description,
+                  isActive: saved.isActive,
+                  createdAt: saved.createdAt,
+                  updatedAt: saved.updatedAt,
+                }
+              : item
+          )
+        );
+      })
+      .catch((error) => {
+        console.error("Failed to update recurring transaction:", error);
+      });
   };
 
   const deleteRecurringTransaction = (id: number) => {
-    setRecurringTransactions((prev) => prev.filter((item) => item.id !== id));
+    if (!userId) return;
+
+    api
+      .deleteRecurringTransaction(userId, id)
+      .then(() => {
+        setRecurringTransactions((previous) =>
+          previous.filter((item) => item.id !== id)
+        );
+      })
+      .catch((error) => {
+        console.error("Failed to delete recurring transaction:", error);
+      });
   };
 
   const toggleRecurringTransaction = (id: number) => {
-    setRecurringTransactions((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, isActive: !item.isActive } : item
-      )
-    );
+    const existing = recurringTransactions.find((item) => item.id === id);
+
+    if (!existing || !userId) return;
+
+    updateRecurringTransaction(id, {
+      isActive: !existing.isActive,
+    });
   };
 
+  // -------------------------------------------------------------------------
   // Profile & Preferences
+  // -------------------------------------------------------------------------
+
   const updateUserProfile = (profile: Partial<UserProfile>) => {
-    setUserProfile((prev) => ({ ...prev, ...profile }));
+    setUserProfile((previous) => ({
+      ...previous,
+      ...profile,
+      avatarText:
+        profile.name !== undefined
+          ? profile.name.charAt(0).toUpperCase()
+          : previous.avatarText,
+    }));
   };
 
-  const updatePreferences = (prefs: Partial<UserPreferences>) => {
-    setPreferences((prev) => {
-      const updated = { ...prev, ...prefs };
+  const updatePreferences = (
+    prefs: Partial<UserPreferences>
+  ) => {
+    setPreferences((previous) => {
+      const updated = { ...previous, ...prefs };
+
       if (prefs.currency) {
         if (prefs.currency === "INR") updated.currencySymbol = "₹";
         else if (prefs.currency === "USD") updated.currencySymbol = "$";
         else if (prefs.currency === "EUR") updated.currencySymbol = "€";
         else if (prefs.currency === "GBP") updated.currencySymbol = "£";
       }
+
       return updated;
     });
   };
 
   const resetDataToDefault = () => {
-    setAccounts(initialAccounts);
     setPaymentMethods(initialPaymentMethods);
     setGoals(initialGoals);
     setRecurringTransactions(initialRecurringTransactions);
-    setTransactions(initialTransactions);
-    setBudgets(initialBudgets);
     setUserProfile(initialUserProfile);
     setPreferences(initialPreferences);
+
+    // Reload database-backed state rather than restoring mock financial data.
+    if (userId) {
+      Promise.all([
+        api.accounts(userId),
+        api.transactions(userId),
+        api.budgets(userId),
+        api.categories(),
+        api.goals(userId),
+        api.recurringTransactions(userId),
+        api.paymentMethods(userId),
+      ])
+        .then(
+          ([
+            accountData,
+            transactionData,
+            budgetData,
+            categoryData,
+            goalData,
+            recurringData,
+            paymentMethodData,
+          ]) => {
+          setAccounts(
+            accountData.map((account) => ({
+              id: account.id,
+              userId: account.userId,
+              accountName: account.accountName,
+              accountType: account.accountType,
+              currentBalance: Number(account.currentBalance),
+              currency: account.currency,
+            }))
+          );
+
+          setTransactions(
+            transactionData.map((transaction) => ({
+              id: transaction.id,
+              userId: transaction.userId,
+              accountId: transaction.accountId,
+              categoryId: transaction.categoryId,
+              type: transaction.type,
+              amount: Number(transaction.amount),
+              date: transaction.date,
+              description: transaction.description,
+              notes: transaction.notes,
+            }))
+          );
+
+          setBudgets(
+            budgetData.map((budget) => ({
+              id: budget.id,
+              userId: budget.userId,
+              categoryId: budget.categoryId,
+              limit: Number(budget.amount),
+              month: budget.month,
+              year: budget.year,
+            }))
+          );
+
+          setCategories(categoryData.map(categoryWithMetadata));
+
+          setGoals(
+            goalData.map((goal) => ({
+              id: goal.id,
+              userId: goal.userId,
+              goalName: goal.goalName,
+              targetAmount: Number(goal.targetAmount),
+              currentAmount: Number(goal.currentAmount),
+              targetDate: goal.targetDate,
+              status: goal.status,
+              createdAt: goal.createdAt,
+              updatedAt: goal.updatedAt,
+            }))
+          );
+
+          setRecurringTransactions(
+            recurringData.map((item) => ({
+              id: item.id,
+              userId: item.userId,
+              accountId: item.accountId,
+              categoryId: item.categoryId,
+              paymentMethodId: item.paymentMethodId,
+              type: item.type,
+              amount: Number(item.amount),
+              frequency: item.frequency,
+              startDate: item.startDate,
+              endDate: item.endDate,
+              description: item.description,
+              isActive: item.isActive,
+              createdAt: item.createdAt,
+              updatedAt: item.updatedAt,
+            }))
+          );
+
+          setPaymentMethods(
+            paymentMethodData.map((method) => ({
+              id: method.id,
+              userId: method.userId,
+              methodName: method.methodName,
+              details: method.details,
+              createdAt: method.createdAt,
+            }))
+          );
+        })
+        .catch((error) => {
+          console.error("Failed to reload database data:", error);
+        });
+    }
   };
 
-  // Computations
-  const { totalIncome, totalExpenses, totalBalance, totalSavings, savingsRate } = useMemo(() => {
-    let inc = 0;
-    let exp = 0;
+  // -------------------------------------------------------------------------
+  // Computed metrics
+  // -------------------------------------------------------------------------
 
-    transactions.forEach((tx) => {
-      if (tx.type === "INCOME") {
-        inc += tx.amount;
+  const {
+    totalIncome,
+    totalExpenses,
+    totalBalance,
+    totalSavings,
+    savingsRate,
+  } = useMemo(() => {
+    let income = 0;
+    let expenses = 0;
+
+    for (const transaction of transactions) {
+      if (transaction.type === "INCOME") {
+        income += transaction.amount;
       } else {
-        exp += tx.amount;
+        expenses += transaction.amount;
       }
-    });
+    }
 
-    const calculatedBalance = inc - exp;
-    const savings = Math.max(0, calculatedBalance);
-    const rate = inc > 0 ? Math.round((savings / inc) * 100) : 0;
+    const balance = income - expenses;
+    const savings = Math.max(0, balance);
+    const rate =
+      income > 0 ? Math.round((savings / income) * 100) : 0;
 
     return {
-      totalIncome: inc,
-      totalExpenses: exp,
-      totalBalance: calculatedBalance,
+      totalIncome: income,
+      totalExpenses: expenses,
+      totalBalance: balance,
       totalSavings: savings,
       savingsRate: rate,
     };
   }, [transactions]);
 
-  // Category breakdown for expenses
   const categoryExpenses = useMemo(() => {
     const expenseTotals: Record<number, number> = {};
-    let totalExp = 0;
+    let totalExpense = 0;
 
-    transactions.forEach((tx) => {
-      if (tx.type === "EXPENSE") {
-        expenseTotals[tx.categoryId] = (expenseTotals[tx.categoryId] || 0) + tx.amount;
-        totalExp += tx.amount;
-      }
-    });
+    for (const transaction of transactions) {
+      if (transaction.type !== "EXPENSE") continue;
 
-    const items: CategoryExpense[] = Object.entries(expenseTotals).map(([catIdStr, value]) => {
-      const catId = Number(catIdStr);
-      const cat = categories.find((c) => c.id === catId);
-      return {
-        categoryId: catId,
-        name: cat ? cat.name : `Category ${catId}`,
-        value,
-        percentage: totalExp > 0 ? Math.round((value / totalExp) * 100) : 0,
-        color: cat?.color || "#94a3b8",
-      };
-    });
+      expenseTotals[transaction.categoryId] =
+        (expenseTotals[transaction.categoryId] || 0) +
+        transaction.amount;
 
-    items.sort((a, b) => b.value - a.value);
-    return items;
+      totalExpense += transaction.amount;
+    }
+
+    return Object.entries(expenseTotals)
+      .map(([categoryIdString, value]) => {
+        const categoryId = Number(categoryIdString);
+        const category = categories.find(
+          (item) => item.id === categoryId
+        );
+
+        return {
+          categoryId,
+          name: category?.name || `Category ${categoryId}`,
+          value,
+          percentage:
+            totalExpense > 0
+              ? Math.round((value / totalExpense) * 100)
+              : 0,
+          color: category?.color || "#94a3b8",
+        };
+      })
+      .sort((a, b) => b.value - a.value);
   }, [transactions, categories]);
 
-  // Monthly trends (Last 6 months)
   const monthlyTrends = useMemo(() => {
-    const baseMonths = [
-      { month: "Apr", monthNumber: 4, income: 42000, expenses: 18500 },
-      { month: "May", monthNumber: 5, income: 48000, expenses: 22100 },
-      { month: "Jun", monthNumber: 6, income: 45500, expenses: 19800 },
-      { month: "Jul", monthNumber: 7, income: 52000, expenses: 24600 },
-      { month: "Aug", monthNumber: 8, income: 57000, expenses: 27400 },
-      { month: "Sep", monthNumber: 9, income: 0, expenses: 0 },
-    ];
+    const now = new Date();
+    const months: MonthlyTrend[] = [];
 
-    let sepInc = 0;
-    let sepExp = 0;
+    for (let offset = 5; offset >= 0; offset--) {
+      const date = new Date(
+        now.getFullYear(),
+        now.getMonth() - offset,
+        1
+      );
 
-    transactions.forEach((tx) => {
-      if (tx.date.startsWith("2026-09")) {
-        if (tx.type === "INCOME") sepInc += tx.amount;
-        else sepExp += tx.amount;
+      const year = date.getFullYear();
+      const monthNumber = date.getMonth() + 1;
+
+      let income = 0;
+      let expenses = 0;
+
+      for (const transaction of transactions) {
+        const transactionDate = new Date(
+          `${transaction.date}T00:00:00`
+        );
+
+        if (
+          transactionDate.getFullYear() === year &&
+          transactionDate.getMonth() + 1 === monthNumber
+        ) {
+          if (transaction.type === "INCOME") {
+            income += transaction.amount;
+          } else {
+            expenses += transaction.amount;
+          }
+        }
       }
-    });
 
-    baseMonths[5].income = sepInc || 65000;
-    baseMonths[5].expenses = sepExp || 22420;
+      months.push({
+        month: date.toLocaleString("en-US", {
+          month: "short",
+        }),
+        monthNumber,
+        income,
+        expenses,
+        savings: Math.max(0, income - expenses),
+      });
+    }
 
-    return baseMonths.map((m) => ({
-      ...m,
-      savings: Math.max(0, m.income - m.expenses),
-    }));
+    return months;
   }, [transactions]);
 
-  // Budget progress items
   const budgetProgressList = useMemo(() => {
-    const spentByCategory: Record<number, number> = {};
-    transactions.forEach((tx) => {
-      if (tx.type === "EXPENSE" && tx.date.startsWith("2026-09")) {
-        spentByCategory[tx.categoryId] =
-          (spentByCategory[tx.categoryId] || 0) + tx.amount;
-      }
-    });
+    return budgets.map((budget) => {
+      const category = categories.find(
+        (item) => item.id === budget.categoryId
+      );
 
-    return budgets.map((b) => {
-      const cat = categories.find((c) => c.id === b.categoryId);
-      const categoryName = cat ? cat.name : `Category ${b.categoryId}`;
-      const color = cat?.color || "#38bdf8";
+      const spent = transactions
+        .filter((transaction) => {
+          if (transaction.type !== "EXPENSE") return false;
+          if (transaction.categoryId !== budget.categoryId) return false;
 
-      const spent =
-        spentByCategory[b.categoryId] !== undefined
-          ? spentByCategory[b.categoryId]
-          : Math.round(b.limit * 0.45);
+          const date = new Date(
+            `${transaction.date}T00:00:00`
+          );
 
-      const remaining = Math.max(0, b.limit - spent);
-      const percentage = b.limit > 0 ? Math.round((spent / b.limit) * 100) : 0;
+          return (
+            date.getFullYear() === budget.year &&
+            date.getMonth() + 1 === budget.month
+          );
+        })
+        .reduce(
+          (sum, transaction) => sum + transaction.amount,
+          0
+        );
+
+      const remaining = Math.max(
+        0,
+        budget.limit - spent
+      );
+
+      const percentage =
+        budget.limit > 0
+          ? Math.round((spent / budget.limit) * 100)
+          : 0;
 
       return {
-        id: b.id,
-        categoryId: b.categoryId,
-        category: categoryName,
-        color,
+        id: budget.id,
+        categoryId: budget.categoryId,
+        category:
+          category?.name || `Category ${budget.categoryId}`,
+        color: category?.color || "#38bdf8",
         spent,
-        limit: b.limit,
+        limit: budget.limit,
         remaining,
         percentage,
-        month: b.month,
-        year: b.year,
+        month: budget.month,
+        year: budget.year,
       };
     });
   }, [budgets, transactions, categories]);
 
-  // Recent transactions
   const recentTransactions = useMemo(() => {
     return [...transactions]
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .sort(
+        (a, b) =>
+          new Date(`${b.date}T00:00:00`).getTime() -
+          new Date(`${a.date}T00:00:00`).getTime()
+      )
       .slice(0, 5);
   }, [transactions]);
 
@@ -536,31 +1362,40 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     recurringTransactions,
     userProfile,
     preferences,
+
     addTransaction,
     updateTransaction,
     deleteTransaction,
+
     addBudget,
     updateBudget,
     deleteBudget,
+
     addAccount,
     updateAccount,
     deleteAccount,
+
     addPaymentMethod,
     updatePaymentMethod,
     deletePaymentMethod,
+
     addGoal,
     updateGoal,
     deleteGoal,
+
     addRecurringTransaction,
     updateRecurringTransaction,
     deleteRecurringTransaction,
     toggleRecurringTransaction,
+
     updateUserProfile,
     updatePreferences,
     resetDataToDefault,
+
     getAccountById,
     getCategoryById,
     getPaymentMethodById,
+
     totalIncome,
     totalExpenses,
     totalBalance,
@@ -572,13 +1407,25 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     recentTransactions,
   };
 
-  return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>;
+  // Keep loading state internal for now; the existing FA1 UI has no loading
+  // shell. Returning the provider immediately preserves the existing layout.
+  void loading;
+
+  return (
+    <FinanceContext.Provider value={value}>
+      {children}
+    </FinanceContext.Provider>
+  );
 }
 
 export function useFinance(): FinanceContextType {
   const context = useContext(FinanceContext);
+
   if (!context) {
-    throw new Error("useFinance must be used within a FinanceProvider");
+    throw new Error(
+      "useFinance must be used within a FinanceProvider"
+    );
   }
+
   return context;
 }

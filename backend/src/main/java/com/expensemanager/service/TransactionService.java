@@ -76,6 +76,7 @@ public class TransactionService {
         transaction.setUser(user);
         transaction.setAccount(account);
         transaction.setCategory(category);
+        transaction.setPaymentMethodId(request.paymentMethodId());
         transaction.setType(request.type());
         transaction.setAmount(request.amount());
         transaction.setTransactionDate(request.transactionDate());
@@ -134,6 +135,7 @@ public class TransactionService {
 
         transaction.setAccount(account);
         transaction.setCategory(category);
+        transaction.setPaymentMethodId(request.paymentMethodId());
         transaction.setType(request.type());
         transaction.setAmount(request.amount());
         transaction.setTransactionDate(request.transactionDate());
@@ -290,6 +292,7 @@ public class TransactionService {
                 transaction.getAccount().getId(),
                 transaction.getCategory().getId(),
                 transaction.getCategory().getName(),
+                transaction.getPaymentMethodId(),
                 transaction.getType().name(),
                 transaction.getAmount(),
                 transaction.getTransactionDate(),

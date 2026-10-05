@@ -8,16 +8,24 @@ import { formatCurrency } from "../utils/formatters";
 import type { Budget } from "../types/budget";
 
 const MONTH_FILTER_OPTIONS = [
-  { value: "9", label: "September 2026" },
-  { value: "8", label: "August 2026" },
-  { value: "7", label: "July 2026" },
+  { value: "1", label: "January 2026" },
+  { value: "2", label: "February 2026" },
+  { value: "3", label: "March 2026" },
+  { value: "4", label: "April 2026" },
+  { value: "5", label: "May 2026" },
   { value: "6", label: "June 2026" },
+  { value: "7", label: "July 2026" },
+  { value: "8", label: "August 2026" },
+  { value: "9", label: "September 2026" },
+  { value: "10", label: "October 2026" },
+  { value: "11", label: "November 2026" },
+  { value: "12", label: "December 2026" },
 ];
 
 export default function Budgets() {
   const { budgetProgressList, deleteBudget, preferences } = useFinance();
 
-  const [selectedMonth, setSelectedMonth] = useState("9");
+  const [selectedMonth, setSelectedMonth] = useState("10");
   const [showModal, setShowModal] = useState(false);
   const [editingBudget, setEditingBudget] = useState<Budget | undefined>(undefined);
 

@@ -84,7 +84,7 @@ export default function Goals() {
       });
     } else {
       addGoal({
-        userId: 1,
+        userId: Number(localStorage.getItem("finora_user_id")),
         goalName: goalName.trim(),
         targetAmount: targetNum,
         currentAmount: currentNum,

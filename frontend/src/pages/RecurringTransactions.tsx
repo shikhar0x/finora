@@ -129,7 +129,7 @@ export default function RecurringTransactions() {
       });
     } else {
       addRecurringTransaction({
-        userId: 1,
+        userId: Number(localStorage.getItem("finora_user_id")),
         type,
         description: description.trim(),
         amount: amtNum,
